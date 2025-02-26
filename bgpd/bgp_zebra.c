@@ -1444,6 +1444,19 @@ static void bgp_zebra_announce_parse_nexthop(
 					      mpinfo->attr->srv6_l3vpn
 						      ->transposition_len);
 			}
+			/* for explicit sid */
+			if (mpinfo->attr->srv6_l3vpn && !CHECK_FLAG(api->flags, ZEBRA_FLAG_EVPN_ROUTE)) {
+				if (!sid_zero_ipv6(&mpinfo->attr->srv6_l3vpn->sid)) {
+					memcpy(&api_nh->seg6_segs[0], &mpinfo->attr->srv6_l3vpn->sid,
+						sizeof(api_nh->seg6_segs[0]));
+
+					if (mpinfo->attr->srv6_l3vpn->transposition_len != 0) {
+						if (!bgp_is_valid_label(&mpinfo->extra->labels->label[0]))
+							continue;
+					}
+					SET_FLAG(api_nh->flags, ZAPI_NEXTHOP_FLAG_SEG6);
+				}
+			}
 
 			api_nh->seg_num = 1;
 			SET_FLAG(api_nh->flags, ZAPI_NEXTHOP_FLAG_SEG6);
