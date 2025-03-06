@@ -3522,9 +3522,11 @@ static int bgp_zebra_process_srv6_locator_static_sids_internal(struct srv6_locat
 	 * free the old list then grant the new one.
 	 */
 	if (bgp->srv6_static_sids != NULL) {
-		for(ALL_LIST_ELEMENTS(static_sids_list, sid_node, sid_nnode, static_sid)) {
-			if (static_sid->locator)
+		for(ALL_LIST_ELEMENTS(bgp->srv6_static_sids, sid_node, sid_nnode, static_sid)) {
+			if (static_sid->locator) {
 				free(static_sid->locator);
+				static_sid->locator = NULL;
+			}
 		}
 		list_delete(&bgp->srv6_static_sids);
 	}
