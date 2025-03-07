@@ -891,6 +891,11 @@ void ensure_vrf_tovpn_sid_explicit(struct bgp *bgp_vpn, struct bgp *bgp_vrf, afi
 	}
 
 	tovpn_sid = XCALLOC(MTYPE_BGP_SRV6_SID, sizeof(struct in6_addr));
+	if (!tovpn_sid) {
+		zlog_err("%s: new tovpn_sid for using static sid allocation failed.", __func__);
+		return;
+	}
+	memcpy(tovpn_sid, &(static_sid->value), sizeof(struct in6_addr));
 	tovpn_sid_transpose_label = explicit_sid_register(bgp_vpn, static_sid, tovpn_sid_locator);
 
 	if (debug)
