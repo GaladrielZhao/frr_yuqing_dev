@@ -871,7 +871,7 @@ void ensure_vrf_tovpn_sid_explicit(struct bgp *bgp_vpn, struct bgp *bgp_vrf, afi
 	 * skip when bgp vpn instance isn't allocated
 	 * or srv6 locator chunk isn't allocated
 	 */
-	if (!bgp_vpn || !bgp_vrf || (bgp_vrf->srv6_locator_name[0] == '\0'))
+	if (!bgp_vpn || !bgp_vrf)
 		return;
 	
 	tovpn_sid_locator = bgp_vpn->srv6_locator;

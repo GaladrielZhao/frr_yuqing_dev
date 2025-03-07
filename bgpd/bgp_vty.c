@@ -10208,7 +10208,7 @@ DEFPY (bgp_sid_vpn_export,
 			vty_out(vty, "auto-mode.\n");
 		else if (CHECK_FLAG(bgp->vrf_flags, BGP_VRF_TOVPN_SID_EXPLICIT))
 			vty_out(vty, "explicit-mode.\n");
-		else
+		else if (sid_idx != 0)
 			vty_out(vty, "idx-mode.\n");
 
 		return CMD_WARNING_CONFIG_FAILED;
