@@ -1455,8 +1455,6 @@ static void bgp_zebra_announce_parse_nexthop(
 							continue;
 					}
 					SET_FLAG(api_nh->flags, ZAPI_NEXTHOP_FLAG_SEG6);
-					SET_FLAG(api->flags, ZEBRA_FLAG_ALLOW_RECURSION);
-					*allow_recursion = true;
 				}
 			}
 
