@@ -886,7 +886,8 @@ struct nhg_hash_entry;
 /*
  * Enqueue a nexthop change operation for the dataplane.
  */
-enum zebra_dplane_result dplane_nexthop_add(struct nhg_hash_entry *nhe);
+enum zebra_dplane_result dplane_nexthop_add(struct nhg_hash_entry *nhe,
+						struct nhg_hash_entry *unresolved_nhe);
 enum zebra_dplane_result dplane_nexthop_update(struct nhg_hash_entry *nhe);
 enum zebra_dplane_result dplane_nexthop_delete(struct nhg_hash_entry *nhe);
 
@@ -1086,7 +1087,7 @@ int dplane_ctx_route_init_basic(struct zebra_dplane_ctx *ctx,
 
 /* Encode next hop information into data plane context. */
 int dplane_ctx_nexthop_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
-			    struct nhg_hash_entry *nhe);
+			    struct nhg_hash_entry *nhe, struct nhg_hash_entry *unresolved_nhe);
 
 /* Encode interface information into data plane context. */
 int dplane_ctx_intf_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,

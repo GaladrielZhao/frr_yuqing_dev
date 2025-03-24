@@ -3411,8 +3411,10 @@ uint16_t zebra_nhg_nhe2grp(struct nh_grp *grp, struct nhg_hash_entry *nhe, int m
 void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 {
 	struct nhg_connected *rb_node_dep = NULL;
+	struct nhg_hash_entry *unresolved_nhe = NULL;
 
-	/* Resolve it first */
+	/* Store the unresolved nhe and resolve it */
+	unresolved_nhe = nhe;
 	nhe = zebra_nhg_resolve(nhe);
 
 	if (zebra_nhg_set_valid_if_active(nhe)) {
@@ -3441,7 +3443,7 @@ void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 		if (!ZEBRA_NHG_CREATED(nhe))
 			nhe->type = ZEBRA_ROUTE_NHG;
 
-		enum zebra_dplane_result ret = dplane_nexthop_add(nhe);
+		enum zebra_dplane_result ret = dplane_nexthop_add(nhe, unresolved_nhe);
 
 		switch (ret) {
 		case ZEBRA_DPLANE_REQUEST_QUEUED:

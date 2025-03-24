@@ -136,6 +136,7 @@ struct dplane_route_info {
 
 	/* Nexthop hash entry info */
 	struct dplane_nexthop_info nhe;
+	struct dplane_nexthop_info unresolved_nhe;
 
 	/* Nexthops */
 	uint32_t zd_nhg_id;
@@ -462,6 +463,9 @@ struct zebra_dplane_ctx {
  * should bypass the kernel.
  */
 #define DPLANE_CTX_FLAG_NO_KERNEL 0x01
+/* Flag that indicates unresolved nhe would be used for srv6 case
+ */
+#define DPLANE_CTX_FLAG_SRV6 0x02
 
 /* List types declared now that the structs involved are defined. */
 DECLARE_DLIST(dplane_ctx_list, struct zebra_dplane_ctx, zd_entries);
@@ -3718,13 +3722,13 @@ static int dplane_ctx_tc_filter_init(struct zebra_dplane_ctx *ctx,
  * Return:	Result status
  */
 int dplane_ctx_nexthop_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
-			    struct nhg_hash_entry *nhe)
+			    struct nhg_hash_entry *nhe, struct nhg_hash_entry *unresolved_nhe)
 {
 	struct zebra_vrf *zvrf = NULL;
 	struct zebra_ns *zns = NULL;
 	int ret = EINVAL;
 
-	if (!ctx || !nhe)
+	if (!ctx || !nhe || !unresolved_nhe)
 		return ret;
 
 	ctx->zd_op = op;
@@ -3735,14 +3739,30 @@ int dplane_ctx_nexthop_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 	ctx->u.rinfo.nhe.afi = nhe->afi;
 	ctx->u.rinfo.nhe.vrf_id = nhe->vrf_id;
 	ctx->u.rinfo.nhe.type = nhe->type;
+	/* Copy over unresolved nhe info */
+	ctx->u.rinfo.unresolved_nhe.id = unresolved_nhe->id;
+	ctx->u.rinfo.unresolved_nhe.afi = unresolved_nhe->afi;
+	ctx->u.rinfo.unresolved_nhe.vrf_id = unresolved_nhe->vrf_id;
+	ctx->u.rinfo.unresolved_nhe.type = unresolved_nhe->type;
 
 	nexthop_group_copy(&(ctx->u.rinfo.nhe.ng), &(nhe->nhg));
+	nexthop_group_copy(&(ctx->u.rinfo.unresolved_nhe.ng), &(unresolved_nhe->nhg));
 
 	/* If this is a group, convert it to a grp array of ids */
 	if (!zebra_nhg_depends_is_empty(nhe)
 	    && !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECURSIVE))
 		ctx->u.rinfo.nhe.nh_grp_count = zebra_nhg_nhe2grp(
 			ctx->u.rinfo.nhe.nh_grp, nhe, MULTIPATH_NUM);
+	if (!zebra_nhg_depends_is_empty(unresolved_nhe)
+		&& !CHECK_FLAG(unresolved_nhe->flags, NEXTHOP_GROUP_RECURSIVE))
+		ctx->u.rinfo.unresolved_nhe.nh_grp_count = zebra_nhg_nhe2grp(
+			ctx->u.rinfo.unresolved_nhe.nh_grp, unresolved_nhe, MULTIPATH_NUM);
+
+	/* store the unresolved.nhe.ng for subsequent encoding*/
+	ctx->u.rinfo.unresolved_nhe.ng = unresolved_nhe->nhg;
+
+	if (unresolved_nhe->nhg.nexthop->nh_srv6)
+		SET_FLAG(ctx->zd_flags, DPLANE_CTX_FLAG_SRV6);
 
 	zvrf = vrf_info_lookup(nhe->vrf_id);
 
@@ -4554,7 +4574,9 @@ enum zebra_dplane_result dplane_tc_filter_update(struct zebra_tc_filter *filter)
  * Return:	Result of the change
  */
 static enum zebra_dplane_result
-dplane_nexthop_update_internal(struct nhg_hash_entry *nhe, enum dplane_op_e op)
+dplane_nexthop_update_internal(struct nhg_hash_entry *nhe,
+					    struct nhg_hash_entry *unresolved_nhe,
+					    enum dplane_op_e op)
 {
 	enum zebra_dplane_result result = ZEBRA_DPLANE_REQUEST_FAILURE;
 	int ret;
@@ -4563,7 +4585,7 @@ dplane_nexthop_update_internal(struct nhg_hash_entry *nhe, enum dplane_op_e op)
 	/* Obtain context block */
 	ctx = dplane_ctx_alloc();
 
-	ret = dplane_ctx_nexthop_init(ctx, op, nhe);
+	ret = dplane_ctx_nexthop_init(ctx, op, nhe, unresolved_nhe);
 	if (ret == AOK) {
 		if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INITIAL_DELAY_INSTALL)) {
 			UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_QUEUED);
@@ -4759,12 +4781,13 @@ done:
 /*
  * Enqueue a nexthop add for the dataplane.
  */
-enum zebra_dplane_result dplane_nexthop_add(struct nhg_hash_entry *nhe)
+enum zebra_dplane_result dplane_nexthop_add(struct nhg_hash_entry *nhe,
+					    struct nhg_hash_entry *unresolved_nhe)
 {
 	enum zebra_dplane_result ret = ZEBRA_DPLANE_REQUEST_FAILURE;
 
-	if (nhe)
-		ret = dplane_nexthop_update_internal(nhe, DPLANE_OP_NH_INSTALL);
+	if (nhe && unresolved_nhe)
+		ret = dplane_nexthop_update_internal(nhe, unresolved_nhe, DPLANE_OP_NH_INSTALL);
 	return ret;
 }
 
