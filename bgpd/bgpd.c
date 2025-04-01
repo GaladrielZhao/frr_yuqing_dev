@@ -1590,6 +1590,10 @@ static void bgp_srv6_cleanup(struct bgp *bgp)
 		srv6_locator_free(bgp->tovpn_sid_locator);
 		bgp->tovpn_sid_locator = NULL;
 	}
+	if (bgp->tovpn_sid_locator_explicit != NULL) {
+		srv6_locator_free(bgp->tovpn_sid_locator_explicit);
+		bgp->tovpn_sid_locator_explicit = NULL;
+	}
 	if (bgp->tovpn_zebra_vrf_sid_last_sent != NULL)
 		XFREE(MTYPE_BGP_SRV6_SID, bgp->tovpn_zebra_vrf_sid_last_sent);
 	if (bgp->tovpn_sid != NULL) {

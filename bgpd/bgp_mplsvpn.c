@@ -873,18 +873,19 @@ void ensure_vrf_tovpn_sid_explicit(struct bgp *bgp_vpn, struct bgp *bgp_vrf, afi
 	if (!bgp_vpn || !bgp_vrf)
 		return;
 
-	tovpn_sid_locator = bgp_vpn->srv6_locator;
-	if (!tovpn_sid_locator) {
-		zlog_err("%s: locator %s does not exist.", __func__, bgp_vrf->srv6_locator_name);
+	if (!bgp_vpn->srv6_locator) {
+		zlog_err("%s: locator %s does not exist.", __func__, bgp_vpn->srv6_locator_name);
 		return;
 	}
+	tovpn_sid_locator = srv6_locator_alloc(bgp_vpn->srv6_locator_name);
+	srv6_locator_copy(tovpn_sid_locator, bgp_vpn->srv6_locator);
 
 	static_sid = static_sid_lookup_by_vrf(bgp_vrf->name, afi);
 	if (!static_sid) {
 		if (bgp_vrf->tovpn_sid)
 			XFREE(MTYPE_BGP_SRV6_SID, bgp_vrf->tovpn_sid);
-		zlog_err("%s: sid does not exist for vrf %s wirth locator %s", __func__,
-			 bgp_vrf->name_pretty, bgp_vrf->srv6_locator_name);
+		zlog_err("%s: sid does not exist for vrf %s with locator %s", __func__,
+			 bgp_vrf->name_pretty, bgp_vpn->srv6_locator_name);
 		return;
 	}
 
@@ -905,6 +906,8 @@ void ensure_vrf_tovpn_sid_explicit(struct bgp *bgp_vpn, struct bgp *bgp_vrf, afi
 
 	if (bgp_vrf->tovpn_sid)
 		XFREE(MTYPE_BGP_SRV6_SID, bgp_vrf->tovpn_sid);
+	if (bgp_vrf->tovpn_sid_locator_explicit)
+		srv6_locator_free(bgp_vrf->tovpn_sid_locator_explicit);
 
 	bgp_vrf->tovpn_sid = tovpn_sid;
 	bgp_vrf->tovpn_sid_locator_explicit = tovpn_sid_locator;
@@ -1065,6 +1068,9 @@ void delete_vrf_tovpn_sid_per_vrf(struct bgp *bgp_vpn, struct bgp *bgp_vrf)
 
 	srv6_locator_free(bgp_vrf->tovpn_sid_locator);
 	bgp_vrf->tovpn_sid_locator = NULL;
+
+	srv6_locator_free(bgp_vrf->tovpn_sid_locator_explicit);
+	bgp_vrf->tovpn_sid_locator_explicit = NULL;
 
 	if (bgp_vrf->tovpn_sid) {
 		ctx.vrf_id = bgp_vrf->vrf_id;
