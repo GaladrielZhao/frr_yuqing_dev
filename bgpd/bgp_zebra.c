@@ -3482,6 +3482,19 @@ static int bgp_zebra_process_srv6_locator_chunk(ZAPI_CALLBACK_ARGS)
 	return 0;
 }
 
+static void bgp_static_sid_del(void *data)
+{
+	struct srv6_sid *static_sid = data;
+	if (!static_sid)
+		return;
+
+	if (static_sid->locator) {
+		srv6_locator_free(static_sid->locator);
+		static_sid->locator = NULL;
+	}
+	free(static_sid);
+}
+
 /**
  * Internal function to process an SRv6 locator and static SIDs list
  *
@@ -3528,15 +3541,8 @@ static int bgp_zebra_process_srv6_locator_static_sids_internal(struct srv6_locat
 	 * If bgp has a srv6_static_sids already,
 	 * free the old list then grant the new one.
 	 */
-	if (bgp->srv6_static_sids != NULL) {
-		for (ALL_LIST_ELEMENTS(bgp->srv6_static_sids, sid_node, sid_nnode, static_sid)) {
-			if (static_sid->locator) {
-				free(static_sid->locator);
-				static_sid->locator = NULL;
-			}
-		}
+	if (bgp->srv6_static_sids)
 		list_delete(&bgp->srv6_static_sids);
-	}
 	bgp->srv6_static_sids = static_sids_list;
 
 	/*
@@ -3557,6 +3563,7 @@ static int bgp_zebra_process_srv6_locator_static_sids(ZAPI_CALLBACK_ARGS)
 	struct bgp *bgp = bgp_get_default();
 	struct srv6_locator loc = {};
 	struct list *static_sids_list = list_new();
+	static_sids_list->del = bgp_static_sid_del;
 
 	if (!bgp || !bgp->srv6_enabled)
 		return 0;

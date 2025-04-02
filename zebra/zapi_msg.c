@@ -2799,6 +2799,20 @@ int zsend_client_close_notify(struct zserv *client, struct zserv *closed_client)
 	return zserv_send_message(client, s);
 }
 
+static void zebra_static_sid_del(void *data)
+{
+	struct srv6_sid *static_sid = data;
+
+	if (!static_sid)
+		return;
+
+	if (static_sid->locator) {
+		srv6_locator_free(static_sid->locator);
+		static_sid->locator = NULL;
+	}
+	free(static_sid);
+}
+
 /**
  * Send SRv6 locator and static SIDs list requested from client back.
  *
@@ -2834,6 +2848,9 @@ int zsend_srv6_manager_get_locator_static_sids_response(struct srv6_locator *loc
 	zclient_create_header(s, ZEBRA_SRV6_MANAGER_GET_LOCATOR_STATIC_SIDS, vrf_id);
 	zapi_srv6_locator_static_sids_encode(s, &locator, static_sids_list);
 	stream_putw_at(s, 0, stream_get_endp(s));
+
+	/* Free the static_sids_list */
+	list_delete(&static_sids_list);
 
 	return zserv_send_message(client, s);
 }
@@ -3131,6 +3148,7 @@ static void zread_srv6_manager_get_locator_static_sids(struct zserv *client, str
 	struct zebra_srv6_sid_ctx *zctx = NULL;
 	struct srv6_sid *static_sid = NULL;
 	struct list *static_sids_list = list_new();
+	static_sids_list->del = zebra_static_sid_del;
 
 	/* Get data */
 	STREAM_GETW(s, len);
@@ -3148,7 +3166,10 @@ static void zread_srv6_manager_get_locator_static_sids(struct zserv *client, str
 
 			/* Store the related info in srv6_sid */
 			static_sid->value = zctx->sid->value;
-			static_sid->locator = zctx->sid->locator;
+			//static_sid->locator = zctx->sid->locator;
+			static_sid->locator = srv6_locator_alloc(zctx->sid->locator->name);
+			srv6_locator_copy(static_sid->locator, zctx->sid->locator);
+
 			static_sid->behavior = zctx->ctx.behavior;
 			static_sid->vrf_id = zctx->ctx.vrf_id;
 

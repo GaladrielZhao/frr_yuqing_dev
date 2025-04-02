@@ -1302,9 +1302,6 @@ int zapi_srv6_locator_static_sids_encode(struct stream *s, struct srv6_locator *
 		stream_putl(s, static_sid->vrf_id);
 	}
 
-	/* Free the static_sids_list */
-	list_delete(&static_sids_list);
-
 	return 0;
 }
 
@@ -1341,16 +1338,22 @@ int zapi_srv6_locator_static_sids_decode(struct stream *s, struct srv6_locator *
 	/* decode static sids list*/
 	STREAM_GETL(s, sid_count);
 	while (sid_count > 0) {
+		char loc_name[SRV6_LOCNAME_SIZE];
 		/* alloc a new srv6_sid node to store the sid info from stream */
 		static_sid = malloc(sizeof(struct srv6_sid));
 
 		/* sid value */
 		STREAM_GET(static_sid, s, sizeof(static_sid->value));
 		/* locator name */
-		static_sid->locator = malloc(sizeof(struct srv6_locator));
+		// static_sid->locator = malloc(sizeof(struct srv6_locator));
 		STREAM_GETW(s, sid_loc_len);
+		/*
 		STREAM_GET(static_sid->locator->name, s, sid_loc_len);
 		static_sid->locator->name[sid_loc_len] = '\0';
+		*/
+		STREAM_GET(loc_name, s, sid_loc_len);
+		loc_name[sid_loc_len] = '\0';
+		static_sid->locator = srv6_locator_alloc(loc_name);
 		/* behavior */
 		STREAM_GETL(s, static_sid->behavior);
 		/* vrf id */
