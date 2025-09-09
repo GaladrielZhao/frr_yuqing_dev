@@ -221,6 +221,7 @@ enum dplane_op_e {
 	DPLANE_OP_SRV6_ENCAP_SRCADDR_SET,
 };
 
+
 /* Operational status of Bridge Ports */
 #define ZEBRA_DPLANE_BR_STATE_DISABLED	 0x01
 #define ZEBRA_DPLANE_BR_STATE_LISTENING	 0x02
@@ -631,6 +632,12 @@ dplane_ctx_get_nhe_ng(const struct zebra_dplane_ctx *ctx);
 const struct nh_grp *
 dplane_ctx_get_nhe_nh_grp(const struct zebra_dplane_ctx *ctx);
 uint16_t dplane_ctx_get_nhe_nh_grp_count(const struct zebra_dplane_ctx *ctx);
+const struct nh_grp_full *
+dplane_ctx_get_nhe_nh_grp_full_depends(const struct zebra_dplane_ctx *ctx);
+uint32_t dplane_ctx_get_nhe_nh_grp_count_full_depends(const struct zebra_dplane_ctx *ctx);
+const struct nh_grp_full *
+dplane_ctx_get_nhe_nh_grp_full_dependents(const struct zebra_dplane_ctx *ctx);
+uint32_t dplane_ctx_get_nhe_nh_grp_count_full_dependents(const struct zebra_dplane_ctx *ctx);
 
 /* Accessors for LSP information */
 

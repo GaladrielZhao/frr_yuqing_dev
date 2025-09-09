@@ -76,6 +76,8 @@ const uint32_t DPLANE_DEFAULT_NEW_WORK = 100;
 
 #endif	/* DPLANE_DEBUG */
 
+#define MAX_NHG_RECURSION 10
+
 /*
  * Nexthop information captured for nexthop/nexthop group updates
  */
@@ -88,7 +90,11 @@ struct dplane_nexthop_info {
 
 	struct nexthop_group ng;
 	struct nh_grp nh_grp[MULTIPATH_NUM];
+	struct nh_grp_full nh_grp_full_depends[(MULTIPATH_NUM * MAX_NHG_RECURSION) + 1];
+	struct nh_grp_full nh_grp_full_dependents[(MULTIPATH_NUM * MAX_NHG_RECURSION) + 1];
 	uint16_t nh_grp_count;
+	uint32_t nh_grp_count_full_depends;
+	uint32_t nh_grp_count_full_dependents;
 };
 
 /*
@@ -774,6 +780,9 @@ static void dplane_ctx_free_internal(struct zebra_dplane_ctx *ctx)
 
 		break;
 
+	case DPLANE_OP_FULL_NHG_INSTALL:
+	case DPLANE_OP_FULL_NHG_UPDATE:
+	case DPLANE_OP_FULL_NHG_DELETE:
 	case DPLANE_OP_NH_INSTALL:
 	case DPLANE_OP_NH_UPDATE:
 	case DPLANE_OP_NH_DELETE: {
@@ -1066,6 +1075,12 @@ const char *dplane_op2str(enum dplane_op_e op)
 		return "ROUTE_NOTIFY";
 
 	/* Nexthop update */
+	case DPLANE_OP_FULL_NHG_INSTALL:
+		return "FULL_NHG_INSTALL";
+	case DPLANE_OP_FULL_NHG_UPDATE:
+		return "FULL_NHG_UPDATE";
+	case DPLANE_OP_FULL_NHG_DELETE:
+		return "FULL_NHG_DELETE";
 	case DPLANE_OP_NH_INSTALL:
 		return "NH_INSTALL";
 	case DPLANE_OP_NH_UPDATE:
@@ -2350,10 +2365,36 @@ dplane_ctx_get_nhe_nh_grp(const struct zebra_dplane_ctx *ctx)
 	return ctx->u.rinfo.nhe.nh_grp;
 }
 
+const struct nh_grp_full *
+dplane_ctx_get_nhe_nh_grp_full_depends(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.rinfo.nhe.nh_grp_full_depends;
+}
+
+const struct nh_grp_full *
+dplane_ctx_get_nhe_nh_grp_full_dependents(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.rinfo.nhe.nh_grp_full_dependents;
+}
+
 uint16_t dplane_ctx_get_nhe_nh_grp_count(const struct zebra_dplane_ctx *ctx)
 {
 	DPLANE_CTX_VALID(ctx);
 	return ctx->u.rinfo.nhe.nh_grp_count;
+}
+
+uint32_t dplane_ctx_get_nhe_nh_grp_count_full_depends(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.rinfo.nhe.nh_grp_count_full_depends;
+}
+
+uint32_t dplane_ctx_get_nhe_nh_grp_count_full_dependents(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.rinfo.nhe.nh_grp_count_full_dependents;
 }
 
 /* Accessors for LSP information */
@@ -3741,6 +3782,19 @@ int dplane_ctx_nexthop_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 	    && !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECURSIVE))
 		ctx->u.rinfo.nhe.nh_grp_count = zebra_nhg_nhe2grp(
 			ctx->u.rinfo.nhe.nh_grp, nhe, MULTIPATH_NUM);
+
+	/* Besides, we convert all depends of it
+	 * and the relations to an array of ids,
+	 * within all nodes including the recursive ones.
+	 *
+	 * We include both depends and dependents.
+	 */
+	if (!zebra_nhg_depends_is_empty(nhe))
+		ctx->u.rinfo.nhe.nh_grp_count_full_depends = zebra_nhg_nhe2grp_full(
+			ctx->u.rinfo.nhe.nh_grp_full_depends, nhe, MULTIPATH_NUM * MAX_NHG_RECURSION, true);
+	if (!zebra_nhg_dependents_is_empty(nhe))
+		ctx->u.rinfo.nhe.nh_grp_count_full_dependents = zebra_nhg_nhe2grp_full(
+			ctx->u.rinfo.nhe.nh_grp_full_dependents, nhe, MULTIPATH_NUM * MAX_NHG_RECURSION, false);
 
 	zvrf = vrf_info_lookup(nhe->vrf_id);
 
@@ -6627,6 +6681,9 @@ static void kernel_dplane_log_detail(struct zebra_dplane_ctx *ctx)
 			   ctx, dplane_op2str(dplane_ctx_get_op(ctx)));
 		break;
 
+	case DPLANE_OP_FULL_NHG_INSTALL:
+	case DPLANE_OP_FULL_NHG_UPDATE:
+	case DPLANE_OP_FULL_NHG_DELETE:
 	case DPLANE_OP_NH_INSTALL:
 	case DPLANE_OP_NH_UPDATE:
 	case DPLANE_OP_NH_DELETE:
@@ -6832,6 +6889,9 @@ static void kernel_dplane_handle_result(struct zebra_dplane_ctx *ctx)
 		}
 		break;
 
+	case DPLANE_OP_FULL_NHG_INSTALL:
+	case DPLANE_OP_FULL_NHG_UPDATE:
+	case DPLANE_OP_FULL_NHG_DELETE:
 	case DPLANE_OP_NH_INSTALL:
 	case DPLANE_OP_NH_UPDATE:
 	case DPLANE_OP_NH_DELETE:

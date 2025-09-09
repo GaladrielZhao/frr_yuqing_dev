@@ -1569,6 +1569,11 @@ static enum netlink_msg_status nl_put_msg(struct nl_batch *bth,
 	case DPLANE_OP_ROUTE_DELETE:
 		return netlink_put_route_update_msg(bth, ctx);
 
+	case DPLANE_OP_FULL_NHG_INSTALL:
+	case DPLANE_OP_FULL_NHG_UPDATE:
+	case DPLANE_OP_FULL_NHG_DELETE:
+		return FRR_NETLINK_SUCCESS;
+
 	case DPLANE_OP_NH_INSTALL:
 	case DPLANE_OP_NH_UPDATE:
 	case DPLANE_OP_NH_DELETE:
