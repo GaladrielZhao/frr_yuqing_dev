@@ -3456,6 +3456,15 @@ void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 		zebra_nhg_install_kernel(rb_node_dep->nhe, type);
 	}
 
+	/*
+	 * Clear QUEUED flag for non-system routes to allow re-installation
+	 * when the NHG is shared between multiple protocols.
+	 */
+	if (type != ZEBRA_ROUTE_CONNECT && type != ZEBRA_ROUTE_LOCAL &&
+	    type != ZEBRA_ROUTE_KERNEL) {
+		UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_QUEUED);
+	}
+
 	if ((CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_VALID) ||
 	     CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INITIAL_DELAY_INSTALL)) &&
 	    (!CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED) ||
@@ -3481,10 +3490,6 @@ void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 				UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_INITIAL_DELAY_INSTALL);
 				UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED);
 			}
-			/*
-			 * Clear QUEUED to allow re-installation when the NHG is shared.
-			 */
-			UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_QUEUED);
 		}
 
 		enum zebra_dplane_result ret = dplane_nexthop_add(nhe);
