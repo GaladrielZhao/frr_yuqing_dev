@@ -3474,16 +3474,17 @@ void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 		 * and is now being used by a non-system route, clear the
 		 * INITIAL_DELAY_INSTALL flag so it will be actually installed
 		 * to the kernel (not just skip kernel for FPM).
-		 * Also clear QUEUED flag to allow re-installation, in case the
-		 * previous dplane request (skip kernel) hasn't completed yet.
 		 */
 		if (type != ZEBRA_ROUTE_CONNECT && type != ZEBRA_ROUTE_LOCAL &&
 		    type != ZEBRA_ROUTE_KERNEL) {
 			if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INITIAL_DELAY_INSTALL)) {
 				UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_INITIAL_DELAY_INSTALL);
 				UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED);
-				UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_QUEUED);
 			}
+			/*
+			 * Clear QUEUED to allow re-installation when the NHG is shared.
+			 */
+			UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_QUEUED);
 		}
 
 		enum zebra_dplane_result ret = dplane_nexthop_add(nhe);
