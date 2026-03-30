@@ -3474,12 +3474,15 @@ void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 		 * and is now being used by a non-system route, clear the
 		 * INITIAL_DELAY_INSTALL flag so it will be actually installed
 		 * to the kernel (not just skip kernel for FPM).
+		 * Also clear QUEUED flag to allow re-installation, in case the
+		 * previous dplane request (skip kernel) hasn't completed yet.
 		 */
 		if (type != ZEBRA_ROUTE_CONNECT && type != ZEBRA_ROUTE_LOCAL &&
 		    type != ZEBRA_ROUTE_KERNEL) {
 			if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INITIAL_DELAY_INSTALL)) {
 				UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_INITIAL_DELAY_INSTALL);
 				UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED);
+				UNSET_FLAG(nhe->flags, NEXTHOP_GROUP_QUEUED);
 			}
 		}
 
@@ -3488,12 +3491,6 @@ void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 		switch (ret) {
 		case ZEBRA_DPLANE_REQUEST_QUEUED:
 			SET_FLAG(nhe->flags, NEXTHOP_GROUP_QUEUED);
-			if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INITIAL_DELAY_INSTALL)) {
-				/* Expected: delayed-install optimization */
-				if (IS_ZEBRA_DEBUG_NHG_DETAIL)
-					zlog_debug("%s: NHG %pNG delayed-install optimization (flags 0x%x)",
-						   __func__, nhe, nhe->flags);
-			}
 			break;
 		case ZEBRA_DPLANE_REQUEST_FAILURE:
 			flog_err(
@@ -3502,9 +3499,12 @@ void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 				nhe);
 			break;
 		case ZEBRA_DPLANE_REQUEST_SUCCESS:
-			flog_err(EC_ZEBRA_DP_INVALID_RC,
-				 "DPlane returned an invalid result code for attempt of installation of %pNG into the kernel",
-				 nhe);
+			if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INITIAL_DELAY_INSTALL)) {
+				/* Expected: delayed-install optimization */
+				if (IS_ZEBRA_DEBUG_NHG_DETAIL)
+					zlog_debug("%s: NHG %pNG delayed-install optimization (flags 0x%x)",
+						   __func__, nhe, nhe->flags);
+			}
 			break;
 		}
 	}
