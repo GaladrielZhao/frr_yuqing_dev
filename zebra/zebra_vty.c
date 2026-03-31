@@ -3939,6 +3939,8 @@ DEFUN (show_zebra,
 	ttable_add_row(table, "Kernel NHG|%s",
 		       zrouter.zav.supports_nhgs ? "Available" : "Unavailable");
 
+	ttable_add_row(table, "NHG FIB mode|%s", zebra_nhg_fib_enabled ? "On" : "Off");
+
 	ttable_add_row(table, "Allow Non FRR route deletion|%s",
 		       zrouter.allow_delete ? "No" : "Yes");
 	ttable_add_row(table, "v4 All LinkDown Routes|%s",
