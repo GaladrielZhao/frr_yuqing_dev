@@ -472,6 +472,12 @@ static void route_entry_attach_ref(struct route_entry *re,
 static void route_entry_update_original_nhe(struct route_entry *re, struct nhg_hash_entry *nhe)
 {
 	re->nhe_received = nhe;
+	zebra_nhg_mark_received_flag(nhe);
+
+	if (IS_ZEBRA_DEBUG_RIB_DETAILED || IS_ZEBRA_DEBUG_NHG_DETAIL) {
+		zlog_debug("%s: re (%p) set nhe_received %p, (%pNG) ",
+			   __func__, re, nhe, nhe);
+	}
 	zebra_nhg_increment_ref(nhe);
 }
 
@@ -504,14 +510,6 @@ done:
 	/* Detach / deref previous nhg */
 
 	if (old_nhg) {
-		if (re->nhe_received == old_nhg) {
-			zebra_nhg_decrement_ref(old_nhg);
-		}
-		if (new_nhghe)
-			zebra_nhg_increment_ref(new_nhghe);
-
-		re->nhe_received = new_nhghe;
-
 		/*
 		 * Return true if we are deleting the previous NHE
 		 * Note: we dont check the return value of the function anywhere
@@ -654,6 +652,7 @@ void rib_install_kernel(struct route_node *rn, struct route_entry *re,
 	 * Install the resolved nexthop object first.
 	 */
 	zebra_nhg_install_kernel(re->nhe, re->type);
+	zebra_nhg_install_kernel(re->nhe_received, re->type);
 
 	/*
 	 * If this is a replace to a new RE let the originator of the RE
@@ -2531,6 +2530,10 @@ static void rib_re_nhg_free(struct route_entry *re)
 		nexthops_free(re->nhe->nhg.nexthop);
 
 	if (re->nhe_received) {
+		if (IS_ZEBRA_DEBUG_RIB_DETAILED || IS_ZEBRA_DEBUG_NHG_DETAIL) {
+			zlog_debug("%s: re (%p) clear nhe_received %p, (%pNG) ",
+				   __func__, re, re->nhe_received, re->nhe_received);
+		}
 		zebra_nhg_decrement_ref(re->nhe_received);
 		re->nhe_received = NULL;
 	}
@@ -2654,8 +2657,8 @@ static void process_subq_early_route_add(struct zebra_early_route *ere)
 	 * level protocols, as the refcnt might be wrong, since it checks
 	 * if old_id != new_id.
 	 */
-	route_entry_update_nhe(re, nhe);
 	route_entry_update_original_nhe(re, nhe);
+	route_entry_update_nhe(re, nhe);
 
 	/* Make it sure prefixlen is applied to the prefix. */
 	apply_mask(&ere->p);

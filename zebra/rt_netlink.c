@@ -3419,6 +3419,19 @@ netlink_put_nexthop_update_msg(struct nl_batch *bth,
 	if (!kernel_nexthops_supported())
 		return FRR_NETLINK_SUCCESS;
 
+	/*
+	 * Skip kernel programming if the skip flag is set in the context
+	 */
+	if (dplane_ctx_is_skip_kernel(ctx)) {
+		if (IS_ZEBRA_DEBUG_KERNEL || IS_ZEBRA_DEBUG_NHG) {
+			zlog_debug(
+				"%s: nhg_id %u (%s): skip flag set, ignoring",
+				__func__, dplane_ctx_get_nhe_id(ctx),
+				zebra_route_string(dplane_ctx_get_nhe_type(ctx)));
+		}
+		return FRR_NETLINK_SUCCESS;
+	}
+
 	return netlink_batch_add_msg(bth, ctx, netlink_nexthop_msg_encoder,
 				     false);
 }

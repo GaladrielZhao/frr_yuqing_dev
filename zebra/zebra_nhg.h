@@ -25,6 +25,12 @@ struct nh_grp {
 	uint16_t weight;
 };
 
+struct nh_grp_full {
+	uint32_t id;
+	uint8_t weight;
+	uint32_t num_direct;
+};
+
 PREDECL_RBTREE_UNIQ(nhg_connected_tree);
 
 /*
@@ -173,6 +179,13 @@ struct nhg_hash_entry {
 #define NEXTHOP_GROUP_INITIAL_DELAY_INSTALL (1 << 9)
 
 #define NEXTHOP_GROUP_RECEIVED_FROM_EXTERNAL (1 << 10)
+
+/*
+ * RIB/FIB will pass down nhe_received nexthop group
+ * to FPM to construct FIB. So we set this flag to
+ * recognize and install it whether it's resolved or not.
+ */
+#define NEXTHOP_GROUP_RECEIVED (1 << 11)
 };
 
 /* Upper 4 bits of the NHG are reserved for indicating the NHG type */
@@ -384,10 +397,17 @@ extern void zebra_nhg_check_valid(struct nhg_hash_entry *nhe);
 /* Convert nhe depends to a grp context that can be passed around safely */
 extern uint16_t zebra_nhg_nhe2grp(struct nh_grp *grp, struct nhg_hash_entry *nhe, int size);
 
+/* Convert nhe full depends to a grp context that can be passed around safely */
+extern uint32_t zebra_nhg_nhe2grp_full(struct nh_grp_full *grp_full,
+					 struct nhg_hash_entry *nhe, uint32_t max_num);
+
 /* Dataplane install/uninstall */
 extern void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type);
 extern void zebra_nhg_uninstall_kernel(struct nhg_hash_entry *nhe);
 extern void zebra_interface_nhg_reinstall(struct interface *ifp);
+
+/* Mark the received flag for a nexthop group */
+void zebra_nhg_mark_received_flag(struct nhg_hash_entry *nhe);
 
 /* Forward ref of dplane update context type */
 struct zebra_dplane_ctx;

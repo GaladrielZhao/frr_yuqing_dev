@@ -35,6 +35,9 @@ DEFINE_MTYPE_STATIC(ZEBRA, DP_CTX, "Zebra DPlane Ctx");
 DEFINE_MTYPE_STATIC(ZEBRA, DP_INTF, "Zebra DPlane Intf");
 DEFINE_MTYPE_STATIC(ZEBRA, DP_PROV, "Zebra DPlane Provider");
 DEFINE_MTYPE_STATIC(ZEBRA, DP_NETFILTER, "Zebra Netfilter Internal Object");
+
+/* Global flag set by zebra --nhg-fib command-line option. */
+extern bool zebra_nhg_fib_enabled;
 DEFINE_MTYPE_STATIC(ZEBRA, DP_NS, "DPlane NSes");
 
 DEFINE_MTYPE(ZEBRA, VLAN_CHANGE_ARR, "Vlan Change Array");
@@ -78,6 +81,8 @@ const uint32_t DPLANE_DEFAULT_NEW_WORK = 100;
 
 #endif	/* DPLANE_DEBUG */
 
+#define MAX_NHG_RECURSION 10
+
 /*
  * Nexthop information captured for nexthop/nexthop group updates
  */
@@ -87,10 +92,20 @@ struct dplane_nexthop_info {
 	afi_t afi;
 	vrf_id_t vrf_id;
 	int type;
+	uint32_t nhg_flags;
 
 	struct nexthop_group ng;
 	struct nh_grp nh_grp[MULTIPATH_NUM];
 	uint16_t nh_grp_count;
+
+	struct nh_grp_full nh_grp_full[(MULTIPATH_NUM * MAX_NHG_RECURSION) + 1];
+	uint32_t nh_grp_full_count;
+
+	uint32_t depends[MULTIPATH_NUM + 1];
+	uint32_t depends_count;
+
+	uint32_t dependents[MULTIPATH_NUM + 1];
+	uint32_t dependents_count;
 };
 
 /*
@@ -139,6 +154,7 @@ struct dplane_route_info {
 
 	/* Nexthop hash entry info */
 	struct dplane_nexthop_info nhe;
+	struct dplane_nexthop_info nhe_received;
 
 	/* Nexthops */
 	uint32_t zd_nhg_id;
@@ -2390,6 +2406,12 @@ uint32_t dplane_ctx_get_old_nhe_id(const struct zebra_dplane_ctx *ctx)
 	return ctx->u.rinfo.nhe.old_id;
 }
 
+uint32_t dplane_ctx_get_nhe_received_id(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.rinfo.nhe_received.id;
+}
+
 afi_t dplane_ctx_get_nhe_afi(const struct zebra_dplane_ctx *ctx)
 {
 	DPLANE_CTX_VALID(ctx);
@@ -2406,6 +2428,12 @@ int dplane_ctx_get_nhe_type(const struct zebra_dplane_ctx *ctx)
 {
 	DPLANE_CTX_VALID(ctx);
 	return ctx->u.rinfo.nhe.type;
+}
+
+uint32_t dplane_ctx_get_nhe_nhg_flags(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.rinfo.nhe.nhg_flags;
 }
 
 const struct nexthop_group *
@@ -2426,6 +2454,43 @@ uint16_t dplane_ctx_get_nhe_nh_grp_count(const struct zebra_dplane_ctx *ctx)
 {
 	DPLANE_CTX_VALID(ctx);
 	return ctx->u.rinfo.nhe.nh_grp_count;
+}
+
+const struct nh_grp_full *
+dplane_ctx_get_nhe_nh_grp_full(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.rinfo.nhe.nh_grp_full;
+}
+
+uint32_t dplane_ctx_get_nhe_nh_grp_full_count(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.rinfo.nhe.nh_grp_full_count;
+}
+
+const uint32_t* dplane_ctx_get_nhe_depends(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.rinfo.nhe.depends;
+}
+
+uint32_t dplane_ctx_get_nhe_depends_count(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.rinfo.nhe.depends_count;
+}
+
+const uint32_t* dplane_ctx_get_nhe_dependents(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.rinfo.nhe.dependents;
+}
+
+uint32_t dplane_ctx_get_nhe_dependents_count(const struct zebra_dplane_ctx *ctx)
+{
+	DPLANE_CTX_VALID(ctx);
+	return ctx->u.rinfo.nhe.dependents_count;
 }
 
 /* Accessors for LSP information */
@@ -3920,6 +3985,11 @@ int dplane_ctx_route_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 
 		ctx->u.rinfo.nhe.id = nhe->id;
 		ctx->u.rinfo.nhe.old_id = 0;
+
+		if (re->nhe_received) {
+			ctx->u.rinfo.nhe_received.id = re->nhe_received->id;
+			ctx->u.rinfo.nhe_received.old_id = 0;
+		}
 		/*
 		 * Check if the nhe is installed/queued before doing anything
 		 * with this route.
@@ -4071,15 +4141,40 @@ int dplane_ctx_nexthop_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 	ctx->u.rinfo.nhe.afi = nhe->afi;
 	ctx->u.rinfo.nhe.vrf_id = nhe->vrf_id;
 	ctx->u.rinfo.nhe.type = nhe->type;
+	ctx->u.rinfo.nhe.nhg_flags = nhe->flags;
 
 	nexthop_group_copy(&(ctx->u.rinfo.nhe.ng), &(nhe->nhg));
 
 	/* If this is a group, convert it to a grp array of ids */
 	if (!zebra_nhg_depends_is_empty(nhe)
-	    && !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECURSIVE))
+	    && !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECURSIVE)) {
+		/* nh_grp is for resolved nhe ids */
 		ctx->u.rinfo.nhe.nh_grp_count = zebra_nhg_nhe2grp(
 			ctx->u.rinfo.nhe.nh_grp, nhe, MULTIPATH_NUM);
 
+		/* nh_grp_full is for all depends nhe ids, including recursive ones */
+		ctx->u.rinfo.nhe.nh_grp_full_count = zebra_nhg_nhe2grp_full(
+			ctx->u.rinfo.nhe.nh_grp_full, nhe, MULTIPATH_NUM * MAX_NHG_RECURSION);
+	} else {
+		zlog_debug("%s: NHG id=%u is singleton or recursive, skip compression",
+			 __func__, nhe->id);
+	}
+
+	/*
+	 * If this nexthop group is marked as received, then we should not
+	 * program it to the kernel, since it is unresolved nexthop group.
+	 * When nhg_fib is enabled, recursive NHGs are also sent to FPM only
+	 * (not to kernel), since they represent intermediate routing hops.
+	 */
+	if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECEIVED) ||
+	    (zebra_nhg_fib_enabled &&
+	     CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECURSIVE))) {
+		dplane_ctx_set_skip_kernel(ctx);
+		if (IS_ZEBRA_DEBUG_DPLANE_DETAIL) {
+			zlog_debug("%s: NHG id=%u is received or recursive (nhg_fib), marking to skip kernel programming",
+			   __func__, nhe->id);
+		}
+	}
 	zvrf = vrf_info_lookup(nhe->vrf_id);
 
 	/*
@@ -4651,6 +4746,8 @@ dplane_route_update_internal(struct route_node *rn,
 			ctx->u.rinfo.zd_old_distance = old_re->distance;
 			ctx->u.rinfo.zd_old_metric = old_re->metric;
 			ctx->u.rinfo.nhe.old_id = old_re->nhe->id;
+			if (old_re->nhe_received)
+				ctx->u.rinfo.nhe_received.old_id = old_re->nhe_received->id;
 
 #ifndef HAVE_NETLINK
 			/* For bsd, capture previous re's nexthops too, sigh.
