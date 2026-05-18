@@ -157,12 +157,6 @@ nhg_connected_tree_del_nhe(struct nhg_connected_tree_head *head,
 	if (remove) {
 		removed_nhe = remove->nhe;
 		nhg_connected_free(remove);
-		/*
-		 * If nhg fib is enabled, we need to reinstall this nhg due to depends or dependents information
-		 * is updated.
-		 */
-		if (zebra_nhg_fib_enabled && CHECK_FLAG(depend->flags, NEXTHOP_GROUP_INSTALLED))
-			SET_FLAG(depend->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
 		return removed_nhe;
 	}
 
@@ -184,12 +178,6 @@ nhg_connected_tree_add_nhe(struct nhg_connected_tree_head *head,
 	 * RB code.
 	 */
 	if (new && (nhg_connected_tree_add(head, new) == NULL)) {
-		/*
-		 * If nhg fib is enabled, we need to reinstall this nhg due to depends or dependents information
-		 * is updated
-		 */
-		if (zebra_nhg_fib_enabled && CHECK_FLAG(depend->flags, NEXTHOP_GROUP_INSTALLED))
-			SET_FLAG(depend->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
 		return NULL;
 	}
 
@@ -246,6 +234,15 @@ static void zebra_nhg_depends_del(struct nhg_hash_entry *from,
 				  struct nhg_hash_entry *depend)
 {
 	nhg_connected_tree_del_nhe(&from->nhg_depends, depend);
+
+	/*
+	 * If nhg fib is enabled and the owner is already installed,
+	 * reinstall it so FPM gets the updated depends list.
+	 */
+	if (zebra_nhg_fib_enabled &&
+	    CHECK_FLAG(from->flags, NEXTHOP_GROUP_INSTALLED)) {
+		SET_FLAG(from->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
+	}
 }
 
 static void zebra_nhg_depends_init(struct nhg_hash_entry *nhe)
@@ -268,12 +265,32 @@ static void zebra_nhg_dependents_del(struct nhg_hash_entry *from,
 				     struct nhg_hash_entry *dependent)
 {
 	nhg_connected_tree_del_nhe(&from->nhg_dependents, dependent);
+
+	/*
+	 * If nhg fib is enabled and the tree owner is already installed,
+	 * reinstall it so FPM gets the updated dependents list.
+	 */
+	if (zebra_nhg_fib_enabled &&
+	    CHECK_FLAG(from->flags, NEXTHOP_GROUP_INSTALLED)) {
+		SET_FLAG(from->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
+	}
 }
 
 static void zebra_nhg_dependents_add(struct nhg_hash_entry *to,
 				     struct nhg_hash_entry *dependent)
 {
 	nhg_connected_tree_add_nhe(&to->nhg_dependents, dependent);
+
+	/*
+	 * If nhg fib is enabled and the tree owner is already installed,
+	 * reinstall it so FPM gets the updated dependents list.
+	 * Note: nhg_connected_tree_add_nhe's internal REINSTALL check is
+	 * on the wrong NHE (the inserted entry, not the tree owner).
+	 */
+	if (zebra_nhg_fib_enabled &&
+	    CHECK_FLAG(to->flags, NEXTHOP_GROUP_INSTALLED)) {
+		SET_FLAG(to->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
+	}
 }
 
 static void zebra_nhg_dependents_init(struct nhg_hash_entry *nhe)
