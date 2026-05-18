@@ -234,15 +234,6 @@ static void zebra_nhg_depends_del(struct nhg_hash_entry *from,
 				  struct nhg_hash_entry *depend)
 {
 	nhg_connected_tree_del_nhe(&from->nhg_depends, depend);
-
-	/*
-	 * If nhg fib is enabled and the owner is already installed,
-	 * reinstall it so FPM gets the updated depends list.
-	 */
-	if (zebra_nhg_fib_enabled &&
-	    CHECK_FLAG(from->flags, NEXTHOP_GROUP_INSTALLED)) {
-		SET_FLAG(from->flags, NEXTHOP_GROUP_REINSTALL_FPM_ONLY);
-	}
 }
 
 static void zebra_nhg_depends_init(struct nhg_hash_entry *nhe)
