@@ -3583,11 +3583,13 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 						   __func__, curr_node->id);
 			}
 
-			grp_full[i].id = curr_node->id;
-			grp_full[i].weight = found ? nexthop->weight : 0;
-			grp_full[i].num_direct = 0;
+			if (i < max_num) {
+				grp_full[i].id = curr_node->id;
+				grp_full[i].weight = found ? nexthop->weight : 0;
+				grp_full[i].num_direct = 0;
 
-			i++;
+				i++;
+			}
 		}
 	}
 

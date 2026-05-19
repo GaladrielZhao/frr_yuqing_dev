@@ -4256,21 +4256,36 @@ int dplane_ctx_nexthop_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 		if (zebra_nhg_fib_enabled) {
 			ctx->u.rinfo.nhe.nh_grp_full_count =
 				zebra_nhg_nhe2grp_full(ctx->u.rinfo.nhe.nh_grp_full, nhe,
-						       MULTIPATH_NUM * MAX_NHG_RECURSION);
+						       (MULTIPATH_NUM * MAX_NHG_RECURSION) + 1);
 			zlog_debug("%s: NHG id=%u full grp_full_count=%u", __func__, nhe->id,
 				   ctx->u.rinfo.nhe.nh_grp_full_count);
+
+			if (ctx->u.rinfo.nhe.nh_grp_full_count >
+			    MULTIPATH_NUM * MAX_NHG_RECURSION) {
+				flog_err(EC_ZEBRA_NHG_FIB_UPDATE,
+					 "%s: NHG id=%u nh_grp_full overflow (count %u > max %u), aborting",
+					 __func__, nhe->id,
+					 ctx->u.rinfo.nhe.nh_grp_full_count,
+					 MULTIPATH_NUM * MAX_NHG_RECURSION);
+				return EINVAL;
+			}
 
 			/* Fill depends array with direct depends IDs */
 			ctx->u.rinfo.nhe.depends_count = 0;
 			struct nhg_connected *rb_node_dep = NULL;
 
 			frr_each (nhg_connected_tree, &nhe->nhg_depends, rb_node_dep) {
-				if (ctx->u.rinfo.nhe.depends_count <
+				if (ctx->u.rinfo.nhe.depends_count >=
 				    array_size(ctx->u.rinfo.nhe.depends)) {
-					ctx->u.rinfo.nhe.depends[ctx->u.rinfo.nhe.depends_count] =
-						rb_node_dep->nhe->id;
-					ctx->u.rinfo.nhe.depends_count++;
+					flog_err(EC_ZEBRA_NHG_FIB_UPDATE,
+						 "%s: NHG id=%u depends overflow (max %zu), aborting",
+						 __func__, nhe->id,
+						 array_size(ctx->u.rinfo.nhe.depends));
+					return EINVAL;
 				}
+				ctx->u.rinfo.nhe.depends[ctx->u.rinfo.nhe.depends_count] =
+					rb_node_dep->nhe->id;
+				ctx->u.rinfo.nhe.depends_count++;
 			}
 			zlog_debug("%s: NHG id=%u depends_count=%u", __func__, nhe->id,
 				   ctx->u.rinfo.nhe.depends_count);
@@ -4286,12 +4301,17 @@ int dplane_ctx_nexthop_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 		struct nhg_connected *rb_node_dependent = NULL;
 
 		frr_each (nhg_connected_tree, &nhe->nhg_dependents, rb_node_dependent) {
-			if (ctx->u.rinfo.nhe.dependents_count <
+			if (ctx->u.rinfo.nhe.dependents_count >=
 			    array_size(ctx->u.rinfo.nhe.dependents)) {
-				ctx->u.rinfo.nhe.dependents[ctx->u.rinfo.nhe.dependents_count] =
-					rb_node_dependent->nhe->id;
-				ctx->u.rinfo.nhe.dependents_count++;
+				flog_err(EC_ZEBRA_NHG_FIB_UPDATE,
+					 "%s: NHG id=%u dependents overflow (max %zu), aborting",
+					 __func__, nhe->id,
+					 array_size(ctx->u.rinfo.nhe.dependents));
+				return EINVAL;
 			}
+			ctx->u.rinfo.nhe.dependents[ctx->u.rinfo.nhe.dependents_count] =
+				rb_node_dependent->nhe->id;
+			ctx->u.rinfo.nhe.dependents_count++;
 		}
 		zlog_debug("%s: NHG id=%u, %p, dependents_count=%u", __func__, nhe->id, nhe,
 			   ctx->u.rinfo.nhe.dependents_count);
