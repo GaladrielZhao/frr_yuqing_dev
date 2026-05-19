@@ -477,10 +477,9 @@ static void route_entry_update_original_nhe(struct route_entry *re, struct nhg_h
 	re->nhe_received = nhe;
 
 	/*
-	 * Only mark the received flag when nhg-fib mode is enabled.
-	 * In normal mode, this flag has no purpose and would cause
-	 * zebra_nhg_install_kernel to skip nexthop resolution,
-	 * breaking nexthop tracking and other features.
+	 * We only mark the protocol-received flag in nhg-fib mode
+	 * to pass the full NHG to FPM.
+	 * In normal mode, we skip this to avoid breaking other features.
 	 */
 	if (zebra_nhg_fib_enabled)
 		zebra_nhg_mark_received_flag(nhe);
