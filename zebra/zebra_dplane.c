@@ -4318,16 +4318,16 @@ int dplane_ctx_nexthop_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 	}
 
 	/*
-	 * If this nexthop group is marked as received, then we should not
-	 * program it to the kernel, since it is unresolved nexthop group.
-	 * When nhg_fib is enabled, recursive NHGs are also sent to FPM only
-	 * (not to kernel), since they represent intermediate routing hops.
+	 * Both RECEIVED and RECURSIVE NHGs should not be installed to kernel.
+	 * RECEIVED NHGs are unresolved protocol-original groups for only FPM.
+	 * RECURSIVE NHGs represent intermediate routing hops and are never
+	 * programmed to kernel.
 	 */
 	if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECEIVED) ||
-	    (zebra_nhg_fib_enabled && CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECURSIVE))) {
+	    CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECURSIVE)) {
 		dplane_ctx_set_skip_kernel(ctx);
 		if (IS_ZEBRA_DEBUG_DPLANE_DETAIL) {
-			zlog_debug("%s: NHG id=%u is received or recursive (nhg_fib), marking to skip kernel programming",
+			zlog_debug("%s: NHG id=%u is received or recursive, marking to skip kernel programming",
 				   __func__, nhe->id);
 		}
 	}
