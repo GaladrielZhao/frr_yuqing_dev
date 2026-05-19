@@ -4259,9 +4259,7 @@ int dplane_ctx_nexthop_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 						       MULTIPATH_NUM * MAX_NHG_RECURSION);
 			zlog_debug("%s: NHG id=%u full grp_full_count=%u", __func__, nhe->id,
 				   ctx->u.rinfo.nhe.nh_grp_full_count);
-		}
 
-		if (zebra_nhg_fib_enabled) {
 			/* Fill depends array with direct depends IDs */
 			ctx->u.rinfo.nhe.depends_count = 0;
 			struct nhg_connected *rb_node_dep = NULL;
