@@ -476,6 +476,9 @@ static void route_entry_update_original_nhe(struct route_entry *re, struct nhg_h
 {
 	re->nhe_received = nhe;
 
+	if (IS_ZEBRA_DEBUG_RIB_DETAILED || IS_ZEBRA_DEBUG_NHG_DETAIL)
+		zlog_debug("%s: re (%p) set nhe_received %p, (%pNG) ", __func__, re, nhe, nhe);
+
 	/*
 	 * We only mark the protocol-received flag in nhg-fib mode
 	 * to pass the full NHG to FPM.
@@ -484,8 +487,6 @@ static void route_entry_update_original_nhe(struct route_entry *re, struct nhg_h
 	if (zebra_nhg_fib_enabled)
 		zebra_nhg_mark_received_flag(nhe);
 
-	if (IS_ZEBRA_DEBUG_RIB_DETAILED || IS_ZEBRA_DEBUG_NHG_DETAIL)
-		zlog_debug("%s: re (%p) set nhe_received %p, (%pNG) ", __func__, re, nhe, nhe);
 	zebra_nhg_increment_ref(nhe);
 }
 
