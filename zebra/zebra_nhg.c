@@ -3462,6 +3462,42 @@ static bool is_srv6_nhg(struct nhg_hash_entry *nhe)
 	return is_srv6;
 }
 
+/*
+ * Check if a NHE should be skipped for nh_grp_full array inclusion.
+ *
+ * SRv6 NHGs are always included.
+ * For normal NHGs:
+ *   - Recursive ones only require VALID.
+ *   - Non-recursive (leaf) ones must be VALID and INSTALLED or QUEUED.
+ */
+static bool is_skip_node(struct nhg_hash_entry *nhe)
+{
+	if (is_srv6_nhg(nhe))
+		return false;
+
+	if (!CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_VALID)) {
+		if (IS_ZEBRA_DEBUG_RIB_DETAILED || IS_ZEBRA_DEBUG_NHG)
+			zlog_debug("%s: NHG ID (%u) not valid, skip",
+				   __func__, nhe->id);
+		return true;
+	}
+
+	/* Recursive NHGs only require VALID */
+	if (CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_RECURSIVE))
+		return false;
+
+	/* Non-recursive (leaf) NHGs must be INSTALLED or QUEUED */
+	if (!CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_INSTALLED) &&
+	    !CHECK_FLAG(nhe->flags, NEXTHOP_GROUP_QUEUED)) {
+		if (IS_ZEBRA_DEBUG_RIB_DETAILED || IS_ZEBRA_DEBUG_NHG)
+			zlog_debug("%s: NHG ID (%u) not installed or queued, skip",
+				   __func__, nhe->id);
+		return true;
+	}
+
+	return false;
+}
+
 /**
  * Recursively construct a group array of full depends' IDs.
  *
@@ -3490,29 +3526,8 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 
 		curr_node = rb_node_dep->nhe;
 
-		/* The invalid NHG will be put in for srv6 cases but not for others,
-		 * and we will put in installed or queued ones (same logic as zebra_nhg_nhe2grp_internal).
-		 * If it's a invalid nhg for normal case, skip
-		 */
-		if (!is_srv6_nhg(curr_node) && !CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_VALID)) {
-			if (IS_ZEBRA_DEBUG_RIB_DETAILED || IS_ZEBRA_DEBUG_NHG)
-				zlog_debug("%s: NHG ID (%u) not valid as a normal case, not appending to dplane install group",
-					   __func__, curr_node->id);
+		if (is_skip_node(curr_node))
 			continue;
-		}
-
-		/* Recursive NHGs are never installed to kernel, only require VALID.
-		 * Non-recursive (leaf) NHGs must be INSTALLED or QUEUED to be included.
-		 */
-		if (!is_srv6_nhg(curr_node) &&
-		    !CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_RECURSIVE) &&
-		    !(CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_INSTALLED) ||
-		      CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_QUEUED))) {
-			if (IS_ZEBRA_DEBUG_RIB_DETAILED || IS_ZEBRA_DEBUG_NHG)
-				zlog_debug("%s: NHG ID (%u) not installed or queued as a normal case, not appending to dplane install group",
-					   __func__, curr_node->id);
-			continue;
-		}
 
 		/* If it's queued, we just log but not skip */
 		if (CHECK_FLAG(curr_node->flags, NEXTHOP_GROUP_QUEUED)) {
@@ -3531,18 +3546,8 @@ static uint32_t zebra_nhg_nhe2grp_full_internal(struct nh_grp_full *grp_full, ui
 				/* Count how many sub-depends this node has */
 				frr_each (nhg_connected_tree, &curr_node->nhg_depends,
 					  sub_rb_node) {
-					/* Apply same filters as main loop */
-					if (!is_srv6_nhg(sub_rb_node->nhe) &&
-					    !CHECK_FLAG(sub_rb_node->nhe->flags,
-							NEXTHOP_GROUP_VALID))
+					if (is_skip_node(sub_rb_node->nhe))
 						continue;
-					if (!is_srv6_nhg(sub_rb_node->nhe) &&
-					    !(CHECK_FLAG(sub_rb_node->nhe->flags,
-							 NEXTHOP_GROUP_INSTALLED) ||
-					      CHECK_FLAG(sub_rb_node->nhe->flags,
-							 NEXTHOP_GROUP_QUEUED)))
-						continue;
-
 					sub_depend_count++;
 				}
 
