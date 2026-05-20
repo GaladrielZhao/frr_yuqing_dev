@@ -80,7 +80,13 @@ const uint32_t DPLANE_DEFAULT_NEW_WORK = 100;
 
 #endif	/* DPLANE_DEBUG */
 
-#define MAX_NHG_RECURSION 2
+/*
+ * Maximum size of nh_grp_full array. We use 2x MULTIPATH_NUM because
+ * in practice it is unlikely to have more than two levels of fully
+ * expanded ECMP recursion. This may be increased if deeper recursion
+ * is needed in the future.
+ */
+#define NH_GRP_FULL_NUM (MULTIPATH_NUM * 2)
 
 /*
  * Nexthop information captured for nexthop/nexthop group updates
@@ -97,7 +103,7 @@ struct dplane_nexthop_info {
 	struct nh_grp nh_grp[MULTIPATH_NUM];
 	uint16_t nh_grp_count;
 
-	struct nh_grp_full nh_grp_full[(MULTIPATH_NUM * MAX_NHG_RECURSION) + 1];
+	struct nh_grp_full nh_grp_full[NH_GRP_FULL_NUM + 1];
 	uint32_t nh_grp_full_count;
 
 	uint32_t depends[MULTIPATH_NUM + 1];
@@ -4256,17 +4262,17 @@ int dplane_ctx_nexthop_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 		if (zebra_nhg_fib_enabled) {
 			ctx->u.rinfo.nhe.nh_grp_full_count =
 				zebra_nhg_nhe2grp_full(ctx->u.rinfo.nhe.nh_grp_full, nhe,
-						       (MULTIPATH_NUM * MAX_NHG_RECURSION) + 1);
+						       NH_GRP_FULL_NUM + 1);
 			zlog_debug("%s: NHG id=%u full grp_full_count=%u", __func__, nhe->id,
 				   ctx->u.rinfo.nhe.nh_grp_full_count);
 
 			if (ctx->u.rinfo.nhe.nh_grp_full_count >
-			    MULTIPATH_NUM * MAX_NHG_RECURSION) {
+			    NH_GRP_FULL_NUM) {
 				flog_err(EC_ZEBRA_NHG_FIB_UPDATE,
 					 "%s: NHG id=%u nh_grp_full overflow (count %u > max %u), aborting",
 					 __func__, nhe->id,
 					 ctx->u.rinfo.nhe.nh_grp_full_count,
-					 MULTIPATH_NUM * MAX_NHG_RECURSION);
+					 NH_GRP_FULL_NUM);
 				return EINVAL;
 			}
 
