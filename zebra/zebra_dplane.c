@@ -4214,6 +4214,78 @@ static int dplane_ctx_tc_filter_init(struct zebra_dplane_ctx *ctx,
 }
 
 /**
+ * dplane_ctx_nexthop_fill_arrays() - Fill nh_grp_full, depends, and dependents
+ * arrays in ctx for nhg-fib mode.
+ *
+ * @ctx:	Dataplane context being initialized
+ * @nhe:	Nexthop group hash entry
+ *
+ * Return:	true on success, false on any array overflow.
+ */
+static bool dplane_ctx_nexthop_fill_arrays(struct zebra_dplane_ctx *ctx,
+					   struct nhg_hash_entry *nhe)
+{
+	struct nhg_connected *rb_node_dep = NULL;
+	struct nhg_connected *rb_node_dependent = NULL;
+
+	if (!zebra_nhg_depends_is_empty(nhe)) {
+		/* Fill nh_grp_full array with all depends nhe ids, including recursive ones */
+		ctx->u.rinfo.nhe.nh_grp_full_count =
+			zebra_nhg_nhe2grp_full(ctx->u.rinfo.nhe.nh_grp_full, nhe,
+					       NH_GRP_FULL_NUM + 1);
+		zlog_debug("%s: NHG id=%u full grp_full_count=%u", __func__, nhe->id,
+			   ctx->u.rinfo.nhe.nh_grp_full_count);
+
+		if (ctx->u.rinfo.nhe.nh_grp_full_count > NH_GRP_FULL_NUM) {
+			flog_err(EC_ZEBRA_NHG_FIB_UPDATE,
+				 "%s: NHG id=%u nh_grp_full overflow (count %u > max %u), aborting",
+				 __func__, nhe->id,
+				 ctx->u.rinfo.nhe.nh_grp_full_count,
+				 NH_GRP_FULL_NUM);
+			return false;
+		}
+
+		/* Fill depends array with direct depends IDs */
+		ctx->u.rinfo.nhe.depends_count = 0;
+		frr_each (nhg_connected_tree, &nhe->nhg_depends, rb_node_dep) {
+			if (ctx->u.rinfo.nhe.depends_count >=
+			    array_size(ctx->u.rinfo.nhe.depends)) {
+				flog_err(EC_ZEBRA_NHG_FIB_UPDATE,
+					 "%s: NHG id=%u depends overflow (max %zu), aborting",
+					 __func__, nhe->id,
+					 array_size(ctx->u.rinfo.nhe.depends));
+				return false;
+			}
+			ctx->u.rinfo.nhe.depends[ctx->u.rinfo.nhe.depends_count] =
+				rb_node_dep->nhe->id;
+			ctx->u.rinfo.nhe.depends_count++;
+		}
+		zlog_debug("%s: NHG id=%u depends_count=%u", __func__, nhe->id,
+			   ctx->u.rinfo.nhe.depends_count);
+	}
+
+	/* Fill dependents array with dependent IDs */
+	ctx->u.rinfo.nhe.dependents_count = 0;
+	frr_each (nhg_connected_tree, &nhe->nhg_dependents, rb_node_dependent) {
+		if (ctx->u.rinfo.nhe.dependents_count >=
+		    array_size(ctx->u.rinfo.nhe.dependents)) {
+			flog_err(EC_ZEBRA_NHG_FIB_UPDATE,
+				 "%s: NHG id=%u dependents overflow (max %zu), aborting",
+				 __func__, nhe->id,
+				 array_size(ctx->u.rinfo.nhe.dependents));
+			return false;
+		}
+		ctx->u.rinfo.nhe.dependents[ctx->u.rinfo.nhe.dependents_count] =
+			rb_node_dependent->nhe->id;
+		ctx->u.rinfo.nhe.dependents_count++;
+	}
+	zlog_debug("%s: NHG id=%u, %p, dependents_count=%u", __func__, nhe->id, nhe,
+		   ctx->u.rinfo.nhe.dependents_count);
+
+	return true;
+}
+
+/**
  * dplane_ctx_nexthop_init() - Initialize a context block for a nexthop update
  *
  * @ctx:	Dataplane context to init
@@ -4257,71 +4329,17 @@ int dplane_ctx_nexthop_init(struct zebra_dplane_ctx *ctx, enum dplane_op_e op,
 		/* nh_grp is for resolved nhe ids */
 		ctx->u.rinfo.nhe.nh_grp_count = zebra_nhg_nhe2grp(
 			ctx->u.rinfo.nhe.nh_grp, nhe, MULTIPATH_NUM);
-
-		/* nh_grp_full is for all depends nhe ids, including recursive ones */
-		if (zebra_nhg_fib_enabled) {
-			ctx->u.rinfo.nhe.nh_grp_full_count =
-				zebra_nhg_nhe2grp_full(ctx->u.rinfo.nhe.nh_grp_full, nhe,
-						       NH_GRP_FULL_NUM + 1);
-			zlog_debug("%s: NHG id=%u full grp_full_count=%u", __func__, nhe->id,
-				   ctx->u.rinfo.nhe.nh_grp_full_count);
-
-			if (ctx->u.rinfo.nhe.nh_grp_full_count >
-			    NH_GRP_FULL_NUM) {
-				flog_err(EC_ZEBRA_NHG_FIB_UPDATE,
-					 "%s: NHG id=%u nh_grp_full overflow (count %u > max %u), aborting",
-					 __func__, nhe->id,
-					 ctx->u.rinfo.nhe.nh_grp_full_count,
-					 NH_GRP_FULL_NUM);
-				return EINVAL;
-			}
-
-			/* Fill depends array with direct depends IDs */
-			ctx->u.rinfo.nhe.depends_count = 0;
-			struct nhg_connected *rb_node_dep = NULL;
-
-			frr_each (nhg_connected_tree, &nhe->nhg_depends, rb_node_dep) {
-				if (ctx->u.rinfo.nhe.depends_count >=
-				    array_size(ctx->u.rinfo.nhe.depends)) {
-					flog_err(EC_ZEBRA_NHG_FIB_UPDATE,
-						 "%s: NHG id=%u depends overflow (max %zu), aborting",
-						 __func__, nhe->id,
-						 array_size(ctx->u.rinfo.nhe.depends));
-					return EINVAL;
-				}
-				ctx->u.rinfo.nhe.depends[ctx->u.rinfo.nhe.depends_count] =
-					rb_node_dep->nhe->id;
-				ctx->u.rinfo.nhe.depends_count++;
-			}
-			zlog_debug("%s: NHG id=%u depends_count=%u", __func__, nhe->id,
-				   ctx->u.rinfo.nhe.depends_count);
-		}
 	} else {
 		zlog_debug("%s: NHG id=%u is singleton or recursive, skip compression", __func__,
 			   nhe->id);
 	}
 
-	if (zebra_nhg_fib_enabled) {
-		/* Fill dependents array with dependent IDs */
-		ctx->u.rinfo.nhe.dependents_count = 0;
-		struct nhg_connected *rb_node_dependent = NULL;
-
-		frr_each (nhg_connected_tree, &nhe->nhg_dependents, rb_node_dependent) {
-			if (ctx->u.rinfo.nhe.dependents_count >=
-			    array_size(ctx->u.rinfo.nhe.dependents)) {
-				flog_err(EC_ZEBRA_NHG_FIB_UPDATE,
-					 "%s: NHG id=%u dependents overflow (max %zu), aborting",
-					 __func__, nhe->id,
-					 array_size(ctx->u.rinfo.nhe.dependents));
-				return EINVAL;
-			}
-			ctx->u.rinfo.nhe.dependents[ctx->u.rinfo.nhe.dependents_count] =
-				rb_node_dependent->nhe->id;
-			ctx->u.rinfo.nhe.dependents_count++;
-		}
-		zlog_debug("%s: NHG id=%u, %p, dependents_count=%u", __func__, nhe->id, nhe,
-			   ctx->u.rinfo.nhe.dependents_count);
-	}
+	/*
+	 * Populate nh_grp_full / depends / dependents arrays for nhg-fib mode
+	 * dplane processing. Bail out on overflow.
+	 */
+	if (zebra_nhg_fib_enabled && !dplane_ctx_nexthop_fill_arrays(ctx, nhe))
+		return EINVAL;
 
 	/*
 	 * Both RECEIVED and RECURSIVE NHGs should not be installed to kernel.
