@@ -3692,7 +3692,7 @@ void zebra_nhg_install_kernel(struct nhg_hash_entry *nhe, uint8_t type)
 	}
 
 	/*
-	 * Info dplane when nhe is valid, not in queue  and one of the following cases
+	 * Inform dplane when nhe is valid, not in queue  and one of the following cases
 	 *  INSTALL
 	 *  REINSTALL
 	 *  REINSTALL_FPM_ONLY
