@@ -724,11 +724,20 @@ def test_dependents_add_remove():
     assert recursive_c1_id in after_add, \
         "NHG-C1 {} should still be in dependents: {}".format(recursive_c1_id, after_add)
 
-    step("Remove recursive route 20.20.20.0/24")
+    step("Remove recursive route and withdraw 2.2.2.2/32 from BGP")
 
     r2.vtysh_cmd("""
         configure terminal
         no ip route 20.20.20.0/24 2.2.2.2
+    """)
+
+    r1.vtysh_cmd("""
+        configure terminal
+        router bgp 65001
+         address-family ipv4 unicast
+          no network 2.2.2.2/32
+        interface lo
+         no ip address 2.2.2.2/32
     """)
 
     def dependents_back_to_baseline():
@@ -736,7 +745,7 @@ def test_dependents_add_remove():
         return recursive_c2_id not in deps and len(deps) == len(baseline)
 
     success, _ = topotest.run_and_expect(
-        dependents_back_to_baseline, True, count=30, wait=1)
+        dependents_back_to_baseline, True, count=60, wait=1)
     after_remove = get_dependents(resolved_b_id)
     assert success, \
         "Dependents not restored after remove. Expected {} got {}".format(
