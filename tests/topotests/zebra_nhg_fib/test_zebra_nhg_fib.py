@@ -596,6 +596,13 @@ def test_dependents_add_remove():
     if tgen.routers_have_failure():
         pytest.skip(tgen.errors)
 
+    step("Set NHG keep timer to 1s so freed NHGs are cleaned up quickly")
+
+    r2.vtysh_cmd("""
+        configure terminal
+        zebra nexthop-group keep 1
+    """)
+
     step("Announce 2.2.2.2/32 from r1 via BGP")
 
     r1.vtysh_cmd("""
