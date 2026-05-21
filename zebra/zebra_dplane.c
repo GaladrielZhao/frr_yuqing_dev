@@ -29,6 +29,7 @@
 #include "zebra/zebra_neigh.h"
 #include "zebra/zebra_tc.h"
 #include "zebra/zebra_trace.h"
+#include "zebra/zebra_errors.h"
 #include "printfrr.h"
 
 /* Memory types */
