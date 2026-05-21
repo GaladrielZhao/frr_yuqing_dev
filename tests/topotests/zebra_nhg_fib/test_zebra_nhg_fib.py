@@ -583,18 +583,48 @@ def test_dependents_add_remove():
 
     Scenario:
       Existing: 10.10.10.0/24 via 1.1.1.1 -> recursive NHG-C1 -> resolved NHG-B
-      Add:      20.20.20.0/24 via 1.1.1.1 -> recursive NHG-C2 -> resolved NHG-B
+      Add:      20.20.20.0/24 via 2.2.2.2 -> recursive NHG-C2 -> resolved NHG-B
+        (2.2.2.2 resolves to same 10.0.0.1, so NHG-C2 depends on same NHG-B)
         => NHG-B's dependents should grow by 1 and contain NHG-C2
       Remove:   20.20.20.0/24
         => NHG-B's dependents should shrink back
     """
     tgen = get_topogen()
+    r1 = tgen.gears["r1"]
     r2 = tgen.gears["r2"]
 
     if tgen.routers_have_failure():
         pytest.skip(tgen.errors)
 
-    step("Get the resolved NHG (NHG-B) for 1.1.1.1 from existing recursive route")
+    step("Announce 2.2.2.2/32 from r1 via BGP")
+
+    r1.vtysh_cmd("""
+        configure terminal
+        interface lo
+         ip address 2.2.2.2/32
+        router bgp 65001
+         address-family ipv4 unicast
+          network 2.2.2.2/32
+    """)
+
+    def check_route_2222():
+        out = r2.cmd('vtysh -c "show ip route 2.2.2.2/32 json"')
+        try:
+            data = json.loads(out)
+            if "2.2.2.2/32" not in data:
+                return "Route 2.2.2.2/32 not found"
+            for routes in data.values():
+                for route in routes:
+                    if route.get("protocol") == "bgp":
+                        return None
+            return "BGP route not found"
+        except (json.JSONDecodeError, KeyError) as e:
+            return "JSON error: {}".format(e)
+
+    _, result = topotest.run_and_expect(check_route_2222, None, count=60, wait=1)
+    assert result is None, "r2 did not learn 2.2.2.2/32 via BGP: {}".format(result)
+
+    step("Get the resolved NHG (NHG-B) from existing recursive route 10.10.10.0/24")
 
     output = r2.cmd('vtysh -c "show ip route 10.10.10.0/24 json"')
     route_data = json.loads(output)
@@ -627,11 +657,11 @@ def test_dependents_add_remove():
         "NHG-C1 {} should be in NHG-B {} dependents baseline {}".format(
             recursive_c1_id, resolved_b_id, baseline)
 
-    step("Add second recursive route 20.20.20.0/24 via 1.1.1.1")
+    step("Add recursive route 20.20.20.0/24 via 2.2.2.2")
 
     r2.vtysh_cmd("""
         configure terminal
-        ip route 20.20.20.0/24 1.1.1.1
+        ip route 20.20.20.0/24 2.2.2.2
     """)
 
     def check_route_added():
@@ -663,9 +693,21 @@ def test_dependents_add_remove():
             break
     assert recursive_c2_id, "Recursive NHG-C2 for 20.20.20.0/24 not found"
     assert recursive_c2_id != recursive_c1_id, \
-        "NHG-C2 should be a distinct NHG from NHG-C1"
+        "NHG-C2 should be a distinct NHG from NHG-C1 (different nexthop)"
 
     step("Verify NHG-B dependents grew to include NHG-C2")
+
+    # NHG-C2 should also depend on same NHG-B (both resolve to 10.0.0.1)
+    nhg_c2_output = r2.cmd(
+        'vtysh -c "show nexthop-group rib {} json"'.format(recursive_c2_id)
+    )
+    nhg_c2_info = json.loads(nhg_c2_output).get(str(recursive_c2_id), {})
+    c2_depends = nhg_c2_info.get("depends", [])
+    step("NHG-C2 {} depends: {}".format(recursive_c2_id, c2_depends))
+    assert len(c2_depends) > 0, "NHG-C2 should have depends"
+    assert c2_depends[0] == resolved_b_id, \
+        "NHG-C2 should depend on same NHG-B {}. Got: {}".format(
+            resolved_b_id, c2_depends[0])
 
     def dependents_contains_c2():
         deps = get_dependents(resolved_b_id)
@@ -682,11 +724,11 @@ def test_dependents_add_remove():
     assert recursive_c1_id in after_add, \
         "NHG-C1 {} should still be in dependents: {}".format(recursive_c1_id, after_add)
 
-    step("Remove second recursive route 20.20.20.0/24")
+    step("Remove recursive route 20.20.20.0/24")
 
     r2.vtysh_cmd("""
         configure terminal
-        no ip route 20.20.20.0/24 1.1.1.1
+        no ip route 20.20.20.0/24 2.2.2.2
     """)
 
     def dependents_back_to_baseline():
