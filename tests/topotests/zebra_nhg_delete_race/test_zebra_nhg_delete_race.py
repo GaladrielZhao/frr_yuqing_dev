@@ -200,9 +200,19 @@ def test_route_and_nhg_installed():
 
 def test_nhg_delete_race_with_kernel_cleanup():
     """
-    Trigger a race where the kernel removes the NHG before zebra's
-    RTM_DELNEXTHOP arrives, then verify zebra still cleans up properly
-    and propagates the delete to the FPM provider.
+    Deterministically reproduce the "kernel already removed the NHG"
+    scenario by:
+      1. Plugging zebra's RIB meta queue so route-delete events stall.
+      2. Deleting the kernel NHG out-of-band via `ip nexthop del`.
+      3. Removing the static route in zebra (queued, not yet processed).
+      4. Unplugging the meta queue. Zebra now processes the route delete
+         and issues RTM_DELNEXTHOP for an object the kernel already
+         purged, which returns ENOENT.
+
+    Without the kernel_netlink fix this ENOENT becomes
+    ZEBRA_DPLANE_REQUEST_FAILURE; dplane_thread_loop() pulls the ctx out
+    of the work_list and the FPM provider never sees the delete -> the
+    NHG leaks on the FPM side.
     """
     tgen = get_topogen()
     if tgen.routers_have_failure():
@@ -215,15 +225,26 @@ def test_nhg_delete_race_with_kernel_cleanup():
 
     err_before = _count_zebra_log(tgen, "Failed to uninstall Nexthop ID")
 
-    step("Bring both nexthop interfaces down so kernel garbage-collects the NHG")
-    # Shutting interfaces forces the kernel to drop the nexthops that
-    # reference them; the parent NHG becomes orphaned and the kernel
-    # purges it. Zebra will subsequently issue RTM_DELNEXTHOP for an
-    # already-removed object => ENOENT.
-    r1.run("ip link set dev r1-eth0 down")
-    r1.run("ip link set dev r1-eth1 down")
+    step("Plug zebra's RIB meta queue so route-delete processing stalls")
+    r1.vtysh_cmd("zebra test metaq disable")
 
-    step("Remove the static route to make zebra retire the NHG")
+    step("Delete the NHG directly from the kernel (out-of-band)")
+    # With the meta queue plugged, zebra has not yet started retiring the
+    # NHG. Removing it from the kernel here guarantees the kernel side is
+    # gone before zebra's RTM_DELNEXTHOP is sent.
+    del_out = r1.run("ip nexthop del id {}".format(nhg_id))
+    logger.info("ip nexthop del id %d: %s", nhg_id, del_out)
+
+    def kernel_nhg_gone():
+        out = r1.run("ip nexthop show id {}".format(nhg_id))
+        return "id {}".format(nhg_id) not in out
+
+    success, _ = topotest.run_and_expect(kernel_nhg_gone, True, count=10, wait=1)
+    assert success, (
+        "Kernel still has NHG id {} after `ip nexthop del`".format(nhg_id)
+    )
+
+    step("Remove the static route (delete queued behind the plugged meta queue)")
     r1.vtysh_cmd(
         """
         configure terminal
@@ -232,6 +253,9 @@ def test_nhg_delete_race_with_kernel_cleanup():
         end
         """
     )
+
+    step("Unplug the meta queue; zebra now drives RTM_DELNEXTHOP into ENOENT")
+    r1.vtysh_cmd("no zebra test metaq disable")
 
     step("Verify zebra fully releases the NHG (no leak in `show nexthop-group rib`)")
 
