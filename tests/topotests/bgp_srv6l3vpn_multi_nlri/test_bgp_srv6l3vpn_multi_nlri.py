@@ -13,7 +13,7 @@ CWD = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(CWD, "../"))
 
 from lib import topotest
-from lib.topogen import Topogen, TopoRouter, get_topogen
+from lib.topogen import Topogen, get_topogen
 from lib.topolog import logger
 from lib.common_config import required_linux_kernel_version
 
@@ -42,12 +42,7 @@ def setup_module(mod):
         setup = os.path.join(CWD, "{}/setup.sh".format(rname))
         if os.path.exists(setup):
             router.run("/bin/bash {}".format(setup))
-        router.load_config(
-            TopoRouter.RD_ZEBRA, os.path.join(CWD, "{}/zebra.conf".format(rname))
-        )
-        router.load_config(
-            TopoRouter.RD_BGP, os.path.join(CWD, "{}/bgpd.conf".format(rname))
-        )
+        router.load_frr_config(os.path.join(CWD, "{}/frr.conf".format(rname)))
 
     tgen.start_router()
 
