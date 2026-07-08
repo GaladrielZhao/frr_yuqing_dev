@@ -1550,6 +1550,18 @@ void kernel_update_multi(struct dplane_ctx_list_head *ctx_list)
 		if (ctx == NULL)
 			break;
 
+		/*
+		 * Skip-kernel ctxs are routed through work_list to preserve
+		 * FIFO ordering for downstream providers. Pass them directly
+		 * to handled_list without encoding to kernel netlink.
+		 */
+		if (dplane_ctx_is_skip_kernel(ctx)) {
+			if (batch.curlen > 0)
+				nl_batch_send(&batch);
+			dplane_ctx_enqueue_tail(&handled_list, ctx);
+			continue;
+		}
+
 		if (batch.zns != NULL
 		    && batch.zns->ns_id != dplane_ctx_get_ns(ctx)->ns_id)
 			nl_batch_send(&batch);
