@@ -47,7 +47,6 @@ import os
 import sys
 import json
 import pytest
-import time
 
 CWD = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(CWD, "../"))
@@ -174,8 +173,21 @@ def test_nhg_delete_race_with_kernel_cleanup():
     step("Bring interfaces down at ~1s (kernel GCs NHG, races with timer expiry)")
     r1.run("(sleep 1 && ip link set dev r1-eth0 down && ip link set dev r1-eth1 down) &")
 
-    step("Wait for KEEP_AROUND timer expiry + dplane processing")
-    time.sleep(3)
+    step("Wait for NHG to be fully cleaned up from zebra")
+
+    def _check_nhg_removed():
+        output = r1.vtysh_cmd("show nexthop-group rib json")
+        try:
+            nhgs = json.loads(output)
+        except json.JSONDecodeError:
+            return "json decode error"
+        for nhe in nhgs.values():
+            if nhe.get("installed", False):
+                return "NHG {} still installed".format(nhe.get("id", "?"))
+        return None
+
+    _, result = topotest.run_and_expect(_check_nhg_removed, None, count=30, wait=1)
+    assert result is None, "NHG not cleaned up: {}".format(result)
 
     step("Verify no 'Failed to uninstall Nexthop ID' errors")
     # NOTE: The ENOENT outcome cannot be reliably reproduced due to tight
